@@ -107,7 +107,7 @@ expect {
 }
 
 expect "#"
-send "passwd paas\n"
+send "passwd user\n"
 
 expect "New password:"
 send "${newpassword}\n"
@@ -139,8 +139,8 @@ done < passwords
 #!/bin/bash
 
 script=check.sh
-username=paas
-password=Huawei@123
+username=test
+password=test
 
 servers=(
 10.186.53.114
