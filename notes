@@ -1,0 +1,184 @@
+----------------------------------------
+# 总核数 = 物理CPU个数 X 每颗物理CPU的核数 
+# 总逻辑CPU数 = 物理CPU个数 X 每颗物理CPU的核数 X 超线程数
+# 查看物理CPU个数
+cat /proc/cpuinfo| grep "physical id"| sort| uniq| wc -l
+# 查看每个物理CPU中core的个数(即核数)
+cat /proc/cpuinfo| grep "cpu cores"| uniq
+# 查看逻辑CPU的个数
+cat /proc/cpuinfo| grep "processor"| wc -l
+#查看CPU信息（型号）
+cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c
+#查看内存信息
+cat /proc/meminfo
+free -m
+
+ls -l /dev/disk/by-uuid/		#查看磁盘uuid
+fdisk -l				#查看磁盘分区
+fdisk /dev/sda				#操作磁盘，新建分区
+partprobe				#写入分区
+mkfs.ext3 /dev/sda3			#格式化分区
+mount /dev/sda3 /data			#挂载分区
+umount /dev/sda3			#卸载分区
+mount					#查看分区挂载信息
+
+uname -r				#查看内核版本
+dmesg					#查看内核信息
+sudo sysctl -p /etc/sysctl.conf		#修改内核参数
+uname -n				#查看主机名
+hostname				#查看主机名
+ulimit -n				#查看文件句柄数
+ulimit -n 4096				#修改文件句柄数
+whoami					#查看当前用户
+
+vmstat 1 10				#查看内存使用情况，每秒刷新,总共刷新10次
+iostat -k 1 10				#查看磁盘当前读写速度，每秒刷新一次，总共刷新10次
+hdparm -Tt /dev/sda			#测试磁盘读取速度
+time dd if=/dev/zero of=/test.dbf bs=8k count=300000			#测试磁盘写入速度
+time dd if=/dev/mapper/oss_vg-opt_vol of=/dev/null bs=8k			#测试磁盘读取速度
+
+ifconfig eth0						#查看eth0配置信息
+ifconfig eth0:0 192.168.1.9/16			#给网卡eth0新绑定一个ip
+ifconfig eth0:0 down					#关掉eth0:0接口
+ifconfig eth0 0					#取消eth0的所有配置信息
+ifconfig eth1 up					#启动eth1，但是不设置任何网络参数
+/etc/init.d/network restart				#重启网络服务，从配置文件加载
+ifup eth0						#从配置文件加载参数并启动
+ifdown eth0						#关闭eth0，如果当前网络参数与文件ifcfg-eth0不符，则拒绝操作
+
+
+echo Press enter to continue...; read key				linux pause
+watch -n 1 -d -t date				#按照一定间隔重复执行命令,-d显示差异,-n指定间隔时间，单位为秒，-t不显示title
+zgrep				#与grep语法一样，但是可以直接查看压缩文件
+
+squid -k parse			# 检查配置文件是否正确
+squid -z			#初始化缓存
+squid -k reconfigure		#重新加载配置文件
+
+
+date && echo start_delay && tc qdisc add dev eth0 root netem delay 49ms     #增加网卡延时
+tc qdisc del dev eth0 root							#取消网卡延时
+tc qdisc show dev eth0								#查看网卡延时设置
+
+配置文件
+/etc/fstab				分区挂载文件
+/etc/ssh/ssh_conf
+/etc/ssh/sshd_conf
+/etc/sudoers				sudo配置文件
+/etc/os-release				操作系统版本
+/etc/*-release
+/etc/sysconfig/network- scripts		网卡目录
+/etc/hostname
+/etc/hosts
+/etc/pam.d/system-auth			密码策略配置文件
+/etc/security/opasswd			使用过的密码
+/etc/passwd				用户及密码文件
+
+
+
+---------------------changepassword---------------------------
+#!/bin/bash
+
+set -x
+
+while read line
+do
+ip=`echo ${line} | awk '{print $1}'`
+password=`echo ${line} | awk '{print $2}'`
+newpassword=$1
+
+if [ "X$1" == "X" ];then
+    echo "new password is empty, exit!"
+	exit 1
+fi
+
+
+/usr/bin/expect << EOF
+spawn ssh root@$ip
+expect {
+    "*(yes/no)?" {
+        send "yes\n"
+        exp_continue
+    }
+    
+    "*assword:" {
+        send "${password}\n"
+    }
+}
+
+expect "#"
+send "passwd paas\n"
+
+expect "New password:"
+send "${newpassword}\n"
+
+expect "Retype new password:"
+send "${newpassword}\n"
+
+expect "#"
+send "exit\n"
+
+expect eof
+send_user "eof"
+EOF
+
+done < hosts
+
+-------------------quiet change password-----------------------------------------------
+#!/bin/sh
+
+
+while read line
+do
+password=`echo ${line} | awk '{print $1}'`
+./changepasswd.sh $password
+done < passwords
+
+
+--------------------batch execute script---------------------------------------------------------------------
+#!/bin/bash
+
+script=check.sh
+username=paas
+password=Huawei@123
+
+servers=(
+10.186.53.114
+10.186.53.149
+)
+
+if [ "X$1" != "X" ];then
+        script=$1
+fi
+if [ ! -f "$script" ];then
+        echo "file $script does not exists, exit!"
+        exit 1
+fi
+
+
+hostkeycheck=`cat ~/.ssh/config 2>/dev/null|grep StrictHostKeyChecking|wc -l`
+if [ $hostkeycheck == 0 ]
+then
+        echo "StrictHostKeyChecking no">>~/.ssh/config
+fi
+
+
+for server in ${servers[@]}
+do
+echo ========================$server==========================
+expect -c "
+        set timeout 30
+        spawn scp ./$script $username@$server:/tmp/
+        expect "password:" {send \"$password\r\"}
+        expect eof;
+        "
+expect -c "
+        set timeout 30
+        spawn ssh $username@$server \"chmod +x /tmp/$script;sh /tmp/$script;rm -f /tmp/$script;\" 
+        expect "password:" {send \"$password\r\"};
+        expect eof;
+        "
+#echo Press enter to continue...; read key
+done
+
+
